@@ -1,0 +1,5 @@
+pytorch-crf
+keras
+lxml
+loguru
+prefetch_generator
