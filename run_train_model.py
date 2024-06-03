@@ -22,32 +22,46 @@ from datetime import datetime as dt
 from prefetch_generator import BackgroundGenerator
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter   # to print to tensorboard
+from omegaconf import OmegaConf
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--name', default="kl8", type=str, help="选择训练数据")
-parser.add_argument('--windows_size', default='5', type=str, help="训练窗口大小,如有多个，用'，'隔开")
-parser.add_argument('--red_epochs', default=100, type=int, help="红球训练轮数")
-parser.add_argument('--blue_epochs', default=1, type=int, help="蓝球训练轮数")
-parser.add_argument('--batch_size', default=32, type=int, help="集合数量")
-parser.add_argument('--predict_pro', default=0, type=int, help="更新batch_size")
-parser.add_argument('--epochs', default=1, type=int, help="训练轮数(红蓝球交叉训练)")
-parser.add_argument('--cq', default=0, type=int, help="是否使用出球顺序，0：不使用（即按从小到大排序），1：使用")
-parser.add_argument('--download_data', default=1, type=int, help="是否下载数据")
-parser.add_argument('--hidden_size', default=512, type=int, help="hidden_size")
-parser.add_argument('--num_layers', default=6, type=int, help="num_layers")
-parser.add_argument('--num_heads', default=8, type=int, help="num_heads")
-parser.add_argument('--tensorboard', default=0, type=int, help="tensorboard switch")
-parser.add_argument('--num_workers', default=0, type=int, help="num_workers switch")
-parser.add_argument('--top_k', default=10, type=int, help="top_k switch")
-parser.add_argument('--model', default='Transformer', type=str, help="model name")
-parser.add_argument('--lr', default=0.01, type=float, help="learning rate")
-parser.add_argument('--plus_mode', default=0, type=int, help="plus mode")
-parser.add_argument('--ext_times', default=1000, type=int, help="ext_times")
-parser.add_argument('--init', default=0, type=int, help="init")
-parser.add_argument('--train_mode', default=0, type=int, help="0: mormal, 1: new trainning, 2: best test model, 3: best loss model")
-parser.add_argument('--split_time', default=2021351, type=int, help="tranning data split time, greater than 0, will saving best test model")
-parser.add_argument('--save_best_loss', default=0, type=int, help="save best loss model")
-args = parser.parse_args()
+
+def get_args_parser():
+    parser = argparse.ArgumentParser(description="conf arg parse")
+    parser.add_argument(
+        "-c", "--config-file", default="", metavar="FILE", help="path to config file"
+    )
+    return parser
+
+def old_conf_parse(args):
+    # global args
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name', default="kl8", type=str, help="选择训练数据")
+    parser.add_argument('--windows_size', default='5', type=str, help="训练窗口大小,如有多个，用'，'隔开")
+    parser.add_argument('--red_epochs', default=100, type=int, help="红球训练轮数")
+    parser.add_argument('--blue_epochs', default=1, type=int, help="蓝球训练轮数")
+    parser.add_argument('--batch_size', default=32, type=int, help="集合数量")
+    parser.add_argument('--predict_pro', default=0, type=int, help="更新batch_size")
+    parser.add_argument('--epochs', default=1, type=int, help="训练轮数(红蓝球交叉训练)")
+    parser.add_argument('--cq', default=0, type=int, help="是否使用出球顺序，0：不使用（即按从小到大排序），1：使用")
+    parser.add_argument('--download_data', default=1, type=int, help="是否下载数据")
+    parser.add_argument('--hidden_size', default=512, type=int, help="hidden_size")
+    parser.add_argument('--num_layers', default=6, type=int, help="num_layers")
+    parser.add_argument('--num_heads', default=8, type=int, help="num_heads")
+    parser.add_argument('--tensorboard', default=0, type=int, help="tensorboard switch")
+    parser.add_argument('--num_workers', default=0, type=int, help="num_workers switch")
+    parser.add_argument('--top_k', default=10, type=int, help="top_k switch")
+    parser.add_argument('--model', default='Transformer', type=str, help="model name")
+    parser.add_argument('--lr', default=0.01, type=float, help="learning rate")
+    parser.add_argument('--plus_mode', default=0, type=int, help="plus mode")
+    parser.add_argument('--ext_times', default=1000, type=int, help="ext_times")
+    parser.add_argument('--init', default=0, type=int, help="init")
+    parser.add_argument('--train_mode', default=0, type=int,
+                        help="0: mormal, 1: new trainning, 2: best test model, 3: best loss model")
+    parser.add_argument('--split_time', default=2021351, type=int,
+                        help="tranning data split time, greater than 0, will saving best test model")
+    parser.add_argument('--save_best_loss', default=0, type=int, help="save best loss model")
+    args = parser.parse_args()
+
 
 warnings.filterwarnings('ignore')
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
@@ -66,15 +80,7 @@ red_test_data = None
 blue_train_data = None
 blue_test_data = None
 
-if args.tensorboard == 1:
-    if not os.path.exists('../tf-logs'):
-        os.makedirs('../tf-logs')
-    writer = SummaryWriter('../tf-logs')
 
-if args.model == "Transformer":
-    _model = modeling.Transformer_Model
-elif args.model == "LSTM":
-    _model = modeling.LSTM_Model
 
 class DataLoaderX(DataLoader):
     def __iter__(self):
@@ -179,7 +185,7 @@ def load_model(m_args, syspath, sub_name_eng, model, optimizer, lr_scheduler, sc
         logger.info("没有找到{}模型，将重新训练！".format(sub_name))
     return current_epoch, no_update_times, split_time, _test_list
 
-def train_ball_model(name, dataset, test_dataset, sub_name="红球"):
+def train_ball_model(args, name, dataset, test_dataset, sub_name="红球"):
     """ 模型训练
     :param name: 玩法
     :param x_data: 训练样本
@@ -442,7 +448,7 @@ def train_ball_model(name, dataset, test_dataset, sub_name="红球"):
     print()
     logger.info("【{}】{}模型训练完成!".format(name_path[name]["name"], sub_name))
 
-def action(name):
+def action(args, name):
     global best_score, test_list, red_train_data, red_test_data, blue_train_data, blue_test_data
     logger.info("正在创建【{}】数据集...".format(name_path[name]["name"]))
     if args.split_time < 0 and len(test_list) <= 0:
@@ -485,7 +491,7 @@ def action(name):
             best_score = 999999999
             logger.info("开始训练【{}】红球模型...".format(name_path[name]["name"]))
             start_time = time.time()
-            train_ball_model(name, dataset=red_train_data, test_dataset=red_test_data, sub_name="红球")
+            train_ball_model(args, name, dataset=red_train_data, test_dataset=red_test_data, sub_name="红球")
             logger.info("训练耗时: {:.4f}".format(time.time() - start_time))
 
         if name not in ["pls", "kl8"] and model_args[name]["model_args"]["blue_epochs"] > 0:
@@ -493,26 +499,41 @@ def action(name):
             logger.info("开始训练【{}】蓝球模型...".format(name_path[name]["name"]))
             start_time = time.time()
             # train_blue_ball_model(name, x_data=train_data["blue"]["x_data"], y_data=train_data["blue"]["y_data"])
-            train_ball_model(name, dataset=blue_train_data, test_dataset=blue_test_data, sub_name="蓝球")
+            train_ball_model(args, name, dataset=blue_train_data, test_dataset=blue_test_data, sub_name="蓝球")
             logger.info("训练耗时: {:.4f}".format(time.time() - start_time))
 
 
-def run(name, windows_size):
+def run(args, name, windows_size):
     """ 执行训练
     :param name: 玩法
     :return:
     """
     total_start_time = time.time()
     if int(windows_size[0]) == 0:
-        action(name)
+        action(args, name)
     else:
         for size in windows_size:
             model_args[name]["model_args"]["windows_size"] = int(size)
-            action(name)
+            action(args, name)
     logger.info("训练总耗时: {:.4f}".format(time.time() - total_start_time))
 
 if __name__ == '__main__':
+    args_parser = get_args_parser()
+    args_conf = args_parser.parse_args()
+    args = OmegaConf.load(args_conf.config_file)
+
     list_windows_size = args.windows_size.split(",")
+
+    if args.tensorboard == 1:
+        if not os.path.exists('../tf-logs'):
+            os.makedirs('../tf-logs')
+        writer = SummaryWriter('../tf-logs')
+
+    if args.model == "Transformer":
+        _model = modeling.Transformer_Model
+    elif args.model == "LSTM":
+        _model = modeling.LSTM_Model
+
     if not args.name:
         raise Exception("玩法名称不能为空！")
     elif not args.windows_size:
@@ -561,4 +582,4 @@ if __name__ == '__main__':
                 list_windows_size.sort(reverse=True)   
                 logger.info(path)
                 logger.info("windows_size: {}".format(list_windows_size))
-        run(args.name, list_windows_size)
+        run(args, args.name, list_windows_size)
