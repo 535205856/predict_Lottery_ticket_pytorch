@@ -523,7 +523,8 @@ if __name__ == '__main__':
     args = OmegaConf.load(args_conf.config_file)
 
     list_windows_size = args.windows_size.split(",")
-
+    print(args)
+    print("-------------------------------------------------------------")
     if args.tensorboard == 1:
         if not os.path.exists('../tf-logs'):
             os.makedirs('../tf-logs')

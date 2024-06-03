@@ -19,6 +19,6 @@ plus_mode: 0  #"plus mode"
 ext_times: 1000  #"ext_times"
 init: 0  #"init"
 train_mode: 0  #"0:  mormal, 1:  new trainning, 2:  best test model, 3:  best loss model"
-split_time: 2021351  #"tranning data split time, greater than 0, will saving best test model"
+split_time: 21136  #"tranning data split time, greater than 0, will saving best test model"
 save_best_loss: 0  #"save best loss model"
 output_dir: /nuwa/save/ssq/

@@ -3,3 +3,5 @@ keras
 lxml
 loguru
 prefetch_generator
+omegaconf
+tensorboard
